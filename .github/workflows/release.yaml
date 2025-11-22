@@ -3,14 +3,13 @@ name: Release Helm Chart
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write  # Required for creating releases and tags
-  packages: write  # Required for pushing to GitHub Container Registry
-
 jobs:
   release:
     name: Release Helm Chart
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write  # Required for creating releases and tags
+      packages: write  # Required for pushing to GitHub Container Registry
     
     steps:
       - name: Checkout repository
@@ -106,21 +105,39 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Authenticate Helm with GitHub Container Registry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+          echo "🔐 Authenticating Helm with GHCR..."
+          echo "${GITHUB_TOKEN}" | helm registry login ghcr.io \
             --username ${{ github.actor }} \
             --password-stdin
           echo "✅ Helm authenticated with ghcr.io"
+          
+          # Verify authentication
+          echo "🔍 Verifying Helm registry configuration..."
+          helm registry list || true
       
       - name: Push Helm chart to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.read_version.outputs.version }}"
           CHART_PACKAGE="$(ls .cr-release-packages/confidential-containers-${VERSION}.tgz)"
+          OCI_REGISTRY="oci://ghcr.io/${{ github.repository_owner }}/charts"
+          
+          echo "📤 Pushing chart to ${OCI_REGISTRY}"
+          echo "📦 Chart package: ${CHART_PACKAGE}"
+          echo "🏷️  Version: ${VERSION}"
+          echo "👤 Actor: ${{ github.actor }}"
+          echo "📁 Repository: ${{ github.repository }}"
+          echo "🏢 Repository Owner: ${{ github.repository_owner }}"
+          echo "🔗 Full OCI path: ${OCI_REGISTRY}/confidential-containers:${VERSION}"
           
           # Push to GHCR using Helm's OCI support
-          helm push "${CHART_PACKAGE}" oci://ghcr.io/${{ github.repository_owner }}/charts
+          helm push "${CHART_PACKAGE}" "${OCI_REGISTRY}"
           
-          echo "✅ Helm chart pushed to ghcr.io/${{ github.repository_owner }}/charts/confidential-containers:${VERSION}"
+          echo "✅ Helm chart pushed to ${OCI_REGISTRY}/confidential-containers:${VERSION}"
       
       - name: Generate release notes
         id: release_notes
